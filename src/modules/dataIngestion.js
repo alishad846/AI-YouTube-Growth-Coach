@@ -3,6 +3,31 @@ import { getAppConfig } from './appConfig.js';
 const YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const YOUTUBE_ANALYTICS_URL = 'https://youtubeanalytics.googleapis.com/v2/reports';
 
+function getApiContext() {
+  const userKey = localStorage.getItem('YOUTUBE_API_KEY');
+  const normalizedKey = userKey?.trim();
+  const defaultKey = window.YOUTUBE_API_KEY;
+  return {
+    key: normalizedKey || defaultKey,
+    usingUserKey: Boolean(normalizedKey),
+    defaultKey
+  };
+}
+
+export function getApiKey() {
+  return getApiContext().key;
+}
+
+function reportApiKeyUsage(usingUserKey, fallback = false) {
+  window.dispatchEvent(
+    new CustomEvent('api-key-status', {
+      detail: { usingUserKey, fallback }
+    }),
+  );
+}
+
+reportApiKeyUsage(getApiContext().usingUserKey, false);
+
 function buildUrl(videoId, apiKey) {
   const params = new URLSearchParams({
     part: 'snippet,statistics,contentDetails',
@@ -123,9 +148,11 @@ function attachAnalytics(videoId, payload, config) {
 
 export const DataIngestion = {
   async fetchVideo(videoId) {
-    const apiKey = globalThis.YOUTUBE_API_KEY;
+    const apiContext = getApiContext();
+    let apiKey = apiContext.key;
+    reportApiKeyUsage(apiContext.usingUserKey, false);
     if (!apiKey) {
-      console.warn('No YOUTUBE_API_KEY provided; using offline simulation.');
+      console.warn('No API key available; using offline simulation.');
       return fakePayload(videoId);
     }
     try {
@@ -133,6 +160,19 @@ export const DataIngestion = {
       const config = getAppConfig();
       return await attachAnalytics(videoId, payload, config);
     } catch (error) {
+      if (apiContext.usingUserKey && apiContext.defaultKey) {
+        console.warn('Invalid API key detected; switching to default key.', error);
+        reportApiKeyUsage(false, true);
+        try {
+          apiKey = apiContext.defaultKey;
+          const payload = await fetchFromYouTube(videoId, apiKey);
+          const config = getAppConfig();
+          return await attachAnalytics(videoId, payload, config);
+        } catch (fallbackError) {
+          console.warn('Default API key fetch failed; using offline simulation.', fallbackError);
+          return fakePayload(videoId);
+        }
+      }
       console.warn('YouTube fetch failed, falling back to cached simulation', error);
       return fakePayload(videoId);
     }

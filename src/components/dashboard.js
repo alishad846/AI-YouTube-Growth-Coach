@@ -107,6 +107,12 @@ export class Dashboard {
             </label>
             <p id="analytics-hint" class="muted">${this.computeAnalyticsHint()}</p>
           </div>
+          <div id="api-key-status" class="api-key-status">
+            <p class="api-key-status__label">Using default API</p>
+            <button type="button" class="secondary api-key-status__button">
+              Use default API
+            </button>
+          </div>
         </section>
         <section class="insight-grid">
           <article class="insight-card">
@@ -185,6 +191,7 @@ export class Dashboard {
     this.attachWhatIfSimulator();
     this.attachCustomRules();
     this.attachAnalyticsToggle();
+    this.initApiKeyIndicator();
     this.refreshVideoCards();
     this.renderFeatureCatalog();
     this.attachAutomationControls();
@@ -253,6 +260,56 @@ export class Dashboard {
     if (!catalog) return;
     catalog.innerHTML =
       DynamicDashboardRenderer.renderFeatureCatalog(FEATURE_CATALOG);
+  }
+
+  initApiKeyIndicator() {
+    this.apiKeyStatusContainer = this.root.querySelector("#api-key-status");
+    if (!this.apiKeyStatusContainer) return;
+    this.apiKeyStatusText = this.apiKeyStatusContainer.querySelector(
+      ".api-key-status__label",
+    );
+    this.apiKeyStatusReset = this.apiKeyStatusContainer.querySelector(
+      ".api-key-status__button",
+    );
+    this.apiKeyStatusReset?.addEventListener("click", () => {
+      localStorage.removeItem("YOUTUBE_API_KEY");
+      this.renderApiKeyStatus({ usingUserKey: false, fallback: false });
+      window.dispatchEvent(
+        new CustomEvent("api-key-status", {
+          detail: { usingUserKey: false, fallback: false },
+        }),
+      );
+      this.setStatus("Switched to the default API key.");
+    });
+    window.addEventListener("api-key-status", (event) => {
+      this.renderApiKeyStatus(event.detail || { usingUserKey: false });
+    });
+    const initialDetail = {
+      usingUserKey: Boolean(localStorage.getItem("YOUTUBE_API_KEY")),
+      fallback: false,
+    };
+    this.renderApiKeyStatus(initialDetail);
+    window.dispatchEvent(
+      new CustomEvent("api-key-status", {
+        detail: initialDetail,
+      }),
+    );
+  }
+
+  renderApiKeyStatus(detail = {}) {
+    if (!this.apiKeyStatusText) return;
+    if (detail.usingUserKey) {
+      this.apiKeyStatusText.textContent = detail.fallback
+        ? "Invalid API key, using default API"
+        : "Using your API key";
+    } else {
+      this.apiKeyStatusText.textContent = "Using default API";
+    }
+    if (this.apiKeyStatusReset) {
+      this.apiKeyStatusReset.disabled = !Boolean(
+        localStorage.getItem("YOUTUBE_API_KEY"),
+      );
+    }
   }
 
   renderNotifications() {
