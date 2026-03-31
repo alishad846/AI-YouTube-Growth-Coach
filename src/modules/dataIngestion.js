@@ -1,16 +1,38 @@
 import { getAppConfig } from './appConfig.js';
+import {
+  getStoredUserKey,
+  getDefaultApiKey,
+  hasDefaultApiLimitReached,
+  hasUserApiLimitReached,
+  markDefaultApiLimitReached,
+  markUserApiLimitReached,
+} from './apiUsageAssistant.js';
 
 const YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3/videos';
 const YOUTUBE_ANALYTICS_URL = 'https://youtubeanalytics.googleapis.com/v2/reports';
 
+class YouTubeApiError extends Error {
+  constructor(message, status, reason) {
+    super(message);
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
 function getApiContext() {
-  const userKey = localStorage.getItem('YOUTUBE_API_KEY');
-  const normalizedKey = userKey?.trim();
-  const defaultKey = window.YOUTUBE_API_KEY;
+  const userKey = getStoredUserKey();
+  const defaultLimitReached = hasDefaultApiLimitReached();
+  const userLimitReached = hasUserApiLimitReached();
+  const usingUserKey = Boolean(userKey) && !userLimitReached;
+  const defaultKey = defaultLimitReached ? null : getDefaultApiKey();
+  const key = usingUserKey ? userKey : defaultKey;
   return {
-    key: normalizedKey || defaultKey,
-    usingUserKey: Boolean(normalizedKey),
-    defaultKey
+    key,
+    usingUserKey,
+    userKey,
+    defaultKey,
+    defaultLimitReached,
+    userLimitReached,
   };
 }
 
@@ -18,15 +40,22 @@ export function getApiKey() {
   return getApiContext().key;
 }
 
-function reportApiKeyUsage(usingUserKey, fallback = false) {
+function reportApiKeyUsage(detail = {}) {
   window.dispatchEvent(
     new CustomEvent('api-key-status', {
-      detail: { usingUserKey, fallback }
+      detail: {
+        usingUserKey: detail.usingUserKey,
+        fallback: Boolean(detail.fallback),
+        defaultLimitReached: hasDefaultApiLimitReached(),
+        userLimitReached: hasUserApiLimitReached(),
+        invalidKey: Boolean(detail.invalidKey),
+        successMessage: detail.successMessage,
+      },
     }),
   );
 }
 
-reportApiKeyUsage(getApiContext().usingUserKey, false);
+reportApiKeyUsage({ usingUserKey: getApiContext().usingUserKey, fallback: false });
 
 function buildUrl(videoId, apiKey) {
   const params = new URLSearchParams({
@@ -57,13 +86,28 @@ function fakePayload(videoId) {
 async function fetchFromYouTube(videoId, apiKey) {
   const url = buildUrl(videoId, apiKey);
   const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`YouTube API error ${response.status}`);
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new YouTubeApiError(
+      `YouTube API error ${response.status}: unable to parse response`,
+      response.status,
+      'parse_error',
+    );
   }
-  const payload = await response.json();
+  if (!response.ok) {
+    const reason =
+      payload?.error?.errors?.[0]?.reason || payload?.error?.reason || 'unknown';
+    throw new YouTubeApiError(
+      `YouTube API error ${response.status}: ${reason}`,
+      response.status,
+      reason,
+    );
+  }
   const item = payload.items && payload.items[0];
   if (!item) {
-    throw new Error('Video not found');
+    throw new YouTubeApiError('Video not found', response.status, 'not_found');
   }
   return {
     videoId,
@@ -150,27 +194,53 @@ export const DataIngestion = {
   async fetchVideo(videoId) {
     const apiContext = getApiContext();
     let apiKey = apiContext.key;
-    reportApiKeyUsage(apiContext.usingUserKey, false);
     if (!apiKey) {
       console.warn('No API key available; using offline simulation.');
+      reportApiKeyUsage({
+        usingUserKey: false,
+        fallback: false,
+      });
       return fakePayload(videoId);
     }
     try {
       const payload = await fetchFromYouTube(videoId, apiKey);
+      if (!apiContext.usingUserKey && !apiContext.defaultLimitReached) {
+        markDefaultApiLimitReached();
+      }
+      reportApiKeyUsage({
+        usingUserKey: apiContext.usingUserKey,
+        fallback: false,
+      });
       const config = getAppConfig();
       return await attachAnalytics(videoId, payload, config);
     } catch (error) {
-      if (apiContext.usingUserKey && apiContext.defaultKey) {
-        console.warn('Invalid API key detected; switching to default key.', error);
-        reportApiKeyUsage(false, true);
-        try {
-          apiKey = apiContext.defaultKey;
-          const payload = await fetchFromYouTube(videoId, apiKey);
-          const config = getAppConfig();
-          return await attachAnalytics(videoId, payload, config);
-        } catch (fallbackError) {
-          console.warn('Default API key fetch failed; using offline simulation.', fallbackError);
-          return fakePayload(videoId);
+      if (apiContext.usingUserKey) {
+        markUserApiLimitReached();
+        const invalidKey =
+          error instanceof YouTubeApiError &&
+          (error.status === 400 || error.status === 401);
+        reportApiKeyUsage({
+          usingUserKey: false,
+          fallback: true,
+          userLimitReached: true,
+          invalidKey,
+        });
+        if (apiContext.defaultKey) {
+          try {
+            const payload = await fetchFromYouTube(videoId, apiContext.defaultKey);
+            if (!apiContext.defaultLimitReached) {
+              markDefaultApiLimitReached();
+            }
+            reportApiKeyUsage({
+              usingUserKey: false,
+              fallback: true,
+            });
+            const config = getAppConfig();
+            return await attachAnalytics(videoId, payload, config);
+          } catch (fallbackError) {
+            console.warn('Default API key fetch failed; using offline simulation.', fallbackError);
+            return fakePayload(videoId);
+          }
         }
       }
       console.warn('YouTube fetch failed, falling back to cached simulation', error);

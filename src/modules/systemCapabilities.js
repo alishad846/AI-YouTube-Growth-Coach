@@ -122,227 +122,6 @@ const VersionRollbackManager = {
   },
 };
 
-const FEATURE_CATALOG = [
-  {
-    id: "core-productivity",
-    title: "Core Productivity Features",
-    features: [
-      {
-        id: "auto-patch-engine",
-        label: "Auto Patch Engine",
-        status: "active",
-        description:
-          "Queues dashboard updates (via AutoPatchEngine) so changes land reliably without manual saves.",
-      },
-      {
-        id: "safe-replace-system",
-        label: "Safe Replace System",
-        status: "active",
-        description:
-          "Validates and commits config updates through SafeReplaceSystem before applying them.",
-      },
-      {
-        id: "version-rollback",
-        label: "Version Rollback",
-        status: "active",
-        description:
-          "Captures snapshots and video states so VersionRollback can revert a bad change in seconds.",
-      },
-      {
-        id: "real-time-execution-pipeline",
-        label: "Real-time Execution Pipeline",
-        status: "active",
-        description:
-          "The RealTimeExecutionPipeline orchestrates ingestion → features → report in milliseconds.",
-      },
-    ],
-  },
-  {
-    id: "intelligence",
-    title: "Intelligence Features",
-    features: [
-      {
-        id: "root-cause-detection",
-        label: "Root Cause Detection Engine",
-        status: "active",
-        description:
-          "RootCauseDetectionEngine wraps diagnosis logic to surface actionable categories fast.",
-      },
-      {
-        id: "behavioral-analytics",
-        label: "Behavioral Analytics Layer",
-        status: "active",
-        description:
-          "BehavioralAnalyticsLayer summarizes engagement, growth, and velocity trends you can trust.",
-      },
-      {
-        id: "predictive-growth-modeling",
-        label: "Predictive Growth Modeling",
-        status: "active",
-        description:
-          "PredictiveGrowthModeling forecasts the next checkpoints so you can plan interventions.",
-      },
-      {
-        id: "pattern-learning-system",
-        label: "Pattern Learning System",
-        status: "active",
-        description:
-          "PatternLearningEngine mines historic snapshots and feeds the Insight Cards System.",
-      },
-    ],
-  },
-  {
-    id: "developer-efficiency",
-    title: "Developer Efficiency Features",
-    features: [
-      {
-        id: "modular-code-generator",
-        label: "Modular Code Generator",
-        status: "active",
-        description:
-          "ModularCodeGenerator keeps dashboard sections reusable and consistent.",
-      },
-      {
-        id: "function-level-patching",
-        label: "Function-Level Patching",
-        status: "active",
-        description:
-          "FunctionLevelPatching wraps critical methods for granular visibility during updates.",
-      },
-      {
-        id: "auto-refactor-engine",
-        label: "Auto Refactor Engine",
-        status: "active",
-        description:
-          "AutoRefactorEngine normalizes video metadata before it hits LocalStorage.",
-      },
-      {
-        id: "error-detection-layer",
-        label: "Error Detection Layer",
-        status: "active",
-        description:
-          "ErrorDetectionLayer guards dashboard execution and streams errors into NotificationSystem.",
-      },
-    ],
-  },
-  {
-    id: "ui-ux",
-    title: "UI / UX Productivity",
-    features: [
-      {
-        id: "dynamic-dashboard-renderer",
-        label: "Dynamic Dashboard Renderer",
-        status: "active",
-        description:
-          "DynamicDashboardRenderer assembles capability and notification panels on demand.",
-      },
-      {
-        id: "component-based-ui",
-        label: "Component-Based UI System",
-        status: "active",
-        description:
-          "ComponentBasedUISystem keeps layouts modular for fast scaling.",
-      },
-      {
-        id: "insight-cards-system",
-        label: "Insight Cards System",
-        status: "active",
-        description:
-          "InsightCardsSystem powers the new feature catalog + insight summaries.",
-      },
-      {
-        id: "one-click-apply-changes",
-        label: "One-Click Apply Changes",
-        status: "active",
-        description:
-          "OneClickApplyChanges instantly replays the latest recommendations with a single tap.",
-      },
-    ],
-  },
-  {
-    id: "automation",
-    title: "Automation Features",
-    features: [
-      {
-        id: "continuous-learning-loop",
-        label: "Continuous Learning Loop",
-        status: "active",
-        description:
-          "ContinuousLearningLoop refreshes pattern insights regardless of clicks.",
-      },
-      {
-        id: "auto-recommendation-executor",
-        label: "Auto Recommendation Executor",
-        status: "active",
-        description:
-          "AutoRecommendationExecutor converts insights into instant, actionable prompts.",
-      },
-      {
-        id: "scheduled-analysis-engine",
-        label: "Scheduled Analysis Engine",
-        status: "active",
-        description:
-          "ScheduledAnalysisEngine runs coach checks at configurable intervals.",
-      },
-      {
-        id: "multi-video-batch-processing",
-        label: "Multi-Video Batch Processing",
-        status: "active",
-        description:
-          "MultiVideoBatchProcessing keeps every card current in a single sweep.",
-      },
-    ],
-  },
-  {
-    id: "high-impact",
-    title: "High Impact Add-ons",
-    features: [
-      {
-        id: "plugin-architecture",
-        label: "Plugin Architecture",
-        status: "active",
-        description:
-          "PluginArchitecture accepts new intelligence, logging, or notification modules.",
-      },
-      {
-        id: "api-integration-layer",
-        label: "API Integration Layer",
-        status: "active",
-        description:
-          "APIIntegrationLayer abstracts every external connector and can add new ones safely.",
-      },
-      {
-        id: "experimentation-engine",
-        label: "Experimentation Engine (A/B Testing)",
-        status: "active",
-        description:
-          "ExperimentationEngine tracks variance in runs so you can test tweaks quickly.",
-      },
-      {
-        id: "notification-system",
-        label: "Notification System",
-        status: "active",
-        description:
-          "NotificationSystem streams live alerts and keeps teams aware of regressions.",
-      },
-    ],
-  },
-];
-
-const ModularCodeGenerator = {
-  createFeatureTile(feature) {
-    return `
-      <article class="feature-highlight feature-highlight--${feature.id}">
-        <header>
-          <h5>${feature.label}</h5>
-          <span class="feature-status">Status: ${feature.status}</span>
-        </header>
-        <p>${feature.description}</p>
-      </article>
-    `;
-  },
-};
-
 const ComponentBasedUISystem = {
   wrapGroup(title, content) {
     return `
@@ -353,19 +132,6 @@ const ComponentBasedUISystem = {
         </div>
       </div>
     `;
-  },
-};
-
-const DynamicDashboardRenderer = {
-  renderFeatureCatalog(catalog = FEATURE_CATALOG) {
-    return catalog
-      .map((group) =>
-        ComponentBasedUISystem.wrapGroup(
-          group.title,
-          group.features.map(ModularCodeGenerator.createFeatureTile).join(""),
-        ),
-      )
-      .join("");
   },
 };
 
@@ -768,16 +534,12 @@ export {
   NotificationSystem,
   AutoPatchEngine,
   VersionRollbackManager,
-  FEATURE_CATALOG,
-  DynamicDashboardRenderer,
   BehavioralAnalyticsLayer,
   PredictiveGrowthModeling,
   AutoRecommendationExecutor,
   ExperimentationEngine,
   APIIntegrationLayer,
   PluginArchitecture,
-  ModularCodeGenerator,
-  ComponentBasedUISystem,
   FunctionLevelPatching,
   AutoRefactorEngine,
   ErrorDetectionLayer,

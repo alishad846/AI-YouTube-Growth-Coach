@@ -13,8 +13,6 @@ import {
 import {
   NotificationSystem,
   AutoPatchEngine,
-  FEATURE_CATALOG,
-  DynamicDashboardRenderer,
   BehavioralAnalyticsLayer,
   PredictiveGrowthModeling,
   MultiVideoBatchProcessing,
@@ -29,6 +27,15 @@ import {
   FunctionLevelPatching,
   AutoRecommendationExecutor,
 } from "../modules/systemCapabilities.js";
+import {
+  getStoredUserKey,
+  hasDefaultApiLimitReached,
+  hasUserApiLimitReached,
+  isApiKeyFormatValid,
+  removeStoredUserKey,
+  setStoredUserKey,
+  shouldShowApiKeyInput,
+} from "../modules/apiUsageAssistant.js";
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -108,10 +115,79 @@ export class Dashboard {
             <p id="analytics-hint" class="muted">${this.computeAnalyticsHint()}</p>
           </div>
           <div id="api-key-status" class="api-key-status">
-            <p class="api-key-status__label">Using default API</p>
-            <button type="button" class="secondary api-key-status__button">
-              Use default API
-            </button>
+            <div class="api-key-status__header">
+              <p class="api-key-status__label">Using default API</p>
+              <button id="api-key-default-reset" type="button" class="secondary api-key-status__button">
+                Use default API
+              </button>
+            </div>
+            <p class="api-key-status__summary muted"></p>
+            <div
+              class="api-key-status__alert api-key-status__alert--default is-hidden"
+              data-default-alert
+            >
+              <strong>⚠️ Default API usage limit reached</strong>
+              <p>You have exhausted your current default API limit.</p>
+              <p>To continue using the service, you need to provide your own YouTube API key.</p>
+              <ul>
+                <li>Request access from the admin to continue using the default API</li>
+                <li>Add your own API key to proceed</li>
+              </ul>
+              <p>Click below to add your API key and continue.</p>
+              <p class="muted">
+                Download the provided
+                <a href="./docs/api-setup-guide.pdf" target="_blank" rel="noopener">
+                  API setup guide (PDF)
+                </a>
+                and follow the step-by-step instructions inside the PDF to obtain and enter your credentials. Once added, the service will activate immediately without errors.
+              </p>
+            </div>
+            <div
+              class="api-key-status__alert api-key-status__alert--user is-hidden"
+              data-user-alert
+            >
+              <strong>⚠️ User API limit reached</strong>
+              <p>You have exhausted your API usage limit.</p>
+              <p>You are currently unable to make further requests.</p>
+              <ul>
+                <li>Add a new API key</li>
+                <li>Or wait for your quota to reset</li>
+              </ul>
+              <p>Click below to add a new API key.</p>
+            </div>
+            <div class="api-key-input is-hidden" data-api-input>
+              <p class="api-key-input__title">Enter your YouTube API key to continue.</p>
+              <div class="api-key-input__row">
+                <input
+                  id="api-key-input"
+                  type="text"
+                  class="api-key-input__field"
+                  placeholder="AIza... (Your API key)"
+                  autocomplete="off"
+                />
+                <button
+                  id="api-key-add-button"
+                  type="button"
+                  class="primary api-key-input__button"
+                  disabled
+                >
+                  Add API key
+                </button>
+              </div>
+              <p class="api-key-input__hint">To generate your API key:</p>
+              <ol class="api-key-input__steps">
+                <li>Go to Google Cloud Console</li>
+                <li>Create or select a project</li>
+                <li>Enable YouTube Data API v3</li>
+                <li>Go to Credentials</li>
+                <li>Create an API key</li>
+                <li>Copy and paste it here</li>
+              </ol>
+              <p class="api-key-input__hint">After adding your API key, the service will resume immediately.</p>
+              <p class="api-key-input__error error is-hidden" data-api-error>
+                Invalid API key. Please check and try again.
+              </p>
+            </div>
           </div>
         </section>
         <section class="insight-grid">
@@ -156,10 +232,9 @@ export class Dashboard {
               </label>
               <button type="submit" class="primary">Save custom rule</button>
             </form>
-            <ul id="custom-rule-list" class="rule-list"></ul>
-          </article>
-        </section>
-        <section id="feature-catalog" class="feature-catalog"></section>
+          <ul id="custom-rule-list" class="rule-list"></ul>
+        </article>
+      </section>
         <section id="automation-controls" class="automation-controls">
           <h3>Automation & Controls</h3>
           <div class="automation-actions">
@@ -193,7 +268,6 @@ export class Dashboard {
     this.attachAnalyticsToggle();
     this.initApiKeyIndicator();
     this.refreshVideoCards();
-    this.renderFeatureCatalog();
     this.attachAutomationControls();
     this.renderNotifications();
     NotificationSystem.subscribe(() => this.renderNotifications());
@@ -255,25 +329,45 @@ export class Dashboard {
       ?.closest(".video-card");
   }
 
-  renderFeatureCatalog() {
-    const catalog = this.root.querySelector("#feature-catalog");
-    if (!catalog) return;
-    catalog.innerHTML =
-      DynamicDashboardRenderer.renderFeatureCatalog(FEATURE_CATALOG);
-  }
-
   initApiKeyIndicator() {
     this.apiKeyStatusContainer = this.root.querySelector("#api-key-status");
     if (!this.apiKeyStatusContainer) return;
-    this.apiKeyStatusText = this.apiKeyStatusContainer.querySelector(
+    this.apiKeyStatusLabel = this.apiKeyStatusContainer.querySelector(
       ".api-key-status__label",
     );
-    this.apiKeyStatusReset = this.apiKeyStatusContainer.querySelector(
-      ".api-key-status__button",
+    this.apiKeyStatusSummary = this.apiKeyStatusContainer.querySelector(
+      ".api-key-status__summary",
     );
-    this.apiKeyStatusReset?.addEventListener("click", () => {
-      localStorage.removeItem("YOUTUBE_API_KEY");
-      this.renderApiKeyStatus({ usingUserKey: false, fallback: false });
+    this.apiKeyStatusButton = this.apiKeyStatusContainer.querySelector(
+      "#api-key-default-reset",
+    );
+    this.apiKeyStatusDefaultAlert = this.apiKeyStatusContainer.querySelector(
+      "[data-default-alert]",
+    );
+    this.apiKeyStatusUserAlert = this.apiKeyStatusContainer.querySelector(
+      "[data-user-alert]",
+    );
+    this.apiKeyInputSection = this.apiKeyStatusContainer.querySelector(
+      "[data-api-input]",
+    );
+    this.apiKeyInput = this.apiKeyStatusContainer.querySelector("#api-key-input");
+    this.apiKeyAddButton = this.apiKeyStatusContainer.querySelector(
+      "#api-key-add-button",
+    );
+    this.apiKeyInputError = this.apiKeyStatusContainer.querySelector(
+      "[data-api-error]",
+    );
+
+    this.apiKeyStatusButton?.addEventListener("click", () => {
+      if (hasDefaultApiLimitReached()) {
+        this.setStatus("Default API usage limit has already been reached.");
+        return;
+      }
+      removeStoredUserKey();
+      this.renderApiKeyStatus({
+        usingUserKey: false,
+        fallback: false,
+      });
       window.dispatchEvent(
         new CustomEvent("api-key-status", {
           detail: { usingUserKey: false, fallback: false },
@@ -281,34 +375,108 @@ export class Dashboard {
       );
       this.setStatus("Switched to the default API key.");
     });
-    window.addEventListener("api-key-status", (event) => {
-      this.renderApiKeyStatus(event.detail || { usingUserKey: false });
+
+    this.apiKeyAddButton?.addEventListener("click", () => {
+      const candidate = this.apiKeyInput?.value?.trim() || "";
+      if (!candidate) {
+        if (this.apiKeyInputError) {
+          this.apiKeyInputError.textContent = "Enter your YouTube API key to continue.";
+          this.apiKeyInputError.classList.remove("is-hidden");
+        }
+        return;
+      }
+      if (!isApiKeyFormatValid(candidate)) {
+        if (this.apiKeyInputError) {
+          this.apiKeyInputError.textContent =
+            "Invalid API key. Please check and try again.";
+          this.apiKeyInputError.classList.remove("is-hidden");
+        }
+        this.renderApiKeyStatus({
+          usingUserKey: false,
+          invalidKey: true,
+        });
+        return;
+      }
+      setStoredUserKey(candidate);
+      if (this.apiKeyInput) {
+        this.apiKeyInput.value = "";
+      }
+      if (this.apiKeyInputError) {
+        this.apiKeyInputError.classList.add("is-hidden");
+      }
+      const successMessage =
+        "Your API key has been successfully added. The service is now active and running using your API.";
+      this.renderApiKeyStatus({
+        usingUserKey: true,
+        userLimitReached: false,
+        successMessage,
+      });
+      window.dispatchEvent(
+        new CustomEvent("api-key-status", {
+          detail: {
+            usingUserKey: true,
+            successMessage,
+          },
+        }),
+      );
+      this.setStatus("Custom API key stored. Continue analyzing with your key.");
     });
-    const initialDetail = {
-      usingUserKey: Boolean(localStorage.getItem("YOUTUBE_API_KEY")),
-      fallback: false,
-    };
-    this.renderApiKeyStatus(initialDetail);
-    window.dispatchEvent(
-      new CustomEvent("api-key-status", {
-        detail: initialDetail,
-      }),
-    );
+
+    window.addEventListener("api-key-status", (event) => {
+      this.renderApiKeyStatus(event.detail);
+    });
+    this.renderApiKeyStatus();
   }
 
   renderApiKeyStatus(detail = {}) {
-    if (!this.apiKeyStatusText) return;
-    if (detail.usingUserKey) {
-      this.apiKeyStatusText.textContent = detail.fallback
-        ? "Invalid API key, using default API"
-        : "Using your API key";
-    } else {
-      this.apiKeyStatusText.textContent = "Using default API";
+    if (!this.apiKeyStatusLabel) return;
+    const storedKey = getStoredUserKey();
+    const userLimit =
+      detail.userLimitReached ?? hasUserApiLimitReached();
+    const defaultLimit =
+      detail.defaultLimitReached ?? hasDefaultApiLimitReached();
+    const usingUser =
+      detail.usingUserKey ?? (Boolean(storedKey) && !userLimit);
+    const showInput =
+      Boolean(detail.showInput) ||
+      detail.defaultLimitReached ||
+      detail.userLimitReached ||
+      shouldShowApiKeyInput();
+    this.apiKeyStatusLabel.textContent = usingUser
+      ? "Using your API key"
+      : defaultLimit
+      ? "Default API locked"
+      : "Using default API";
+    const summary =
+      detail.successMessage ||
+      (usingUser
+        ? "Your API key is live and powering requests."
+        : defaultLimit
+        ? "Default API is locked after the free request; add a key to stay connected."
+        : "Default API is active; the next successful analysis will exhaust the free quota.");
+    if (this.apiKeyStatusSummary) {
+      this.apiKeyStatusSummary.textContent = summary;
     }
-    if (this.apiKeyStatusReset) {
-      this.apiKeyStatusReset.disabled = !Boolean(
-        localStorage.getItem("YOUTUBE_API_KEY"),
+    if (this.apiKeyStatusDefaultAlert) {
+      this.apiKeyStatusDefaultAlert.classList.toggle(
+        "is-hidden",
+        !(defaultLimit && !usingUser),
       );
+    }
+    if (this.apiKeyStatusUserAlert) {
+      this.apiKeyStatusUserAlert.classList.toggle("is-hidden", !userLimit);
+    }
+    if (this.apiKeyInputSection) {
+      this.apiKeyInputSection.classList.toggle("is-hidden", !showInput);
+    }
+    if (this.apiKeyAddButton) {
+      this.apiKeyAddButton.disabled = !showInput;
+    }
+    if (this.apiKeyInputError) {
+      this.apiKeyInputError.classList.toggle("is-hidden", !detail.invalidKey);
+    }
+    if (this.apiKeyStatusButton) {
+      this.apiKeyStatusButton.disabled = defaultLimit;
     }
   }
 
