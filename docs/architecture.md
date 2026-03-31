@@ -1,0 +1,66 @@
+# AI YouTube Growth Coach — Architecture
+
+## Core Design Goals
+1. **Local-first intelligence** — all history, preferences, and snapshots live inside `localStorage` so the coach remains private and operative across browser restarts.
+2. **Modular computation** — each engine owns a narrowly scoped responsibility, passing structured data to the next layer for traceability.
+3. **Action-oriented narrative** — the UI is framed as a coach: diagnoses + recommendations rather than raw dashboards.
+
+## System Modules & Interactions
+1. **Data Ingestion Layer** (YouTube API): fetches `statistics`, `snippet`, and optional `contentDetails` for a video and hands the raw payload directly to Feature Engineering while notifying the UI of fetch status.
+2. **Local Storage Manager**: orchestrates persistence, storing video metadata, snapshots, preferences, and the video catalog under a single namespace. It also provides snapshot history for growth calculations and pattern mining.
+3. **Feature Engineering Layer**: transforms raw statistics into derived metrics (`engagementRate`, `growthRate`, `performanceScore`, `velocity`). These numeric signals fuel diagnosis and growth modeling.
+4. **Growth & Snapshot Engine**: compares the newest data point to the latest stored snapshot to compute `deltaViews`, `deltaEngagement`, `velocity` (views/time), and persists the new snapshot for future iterations.
+5. **Analysis & Diagnosis Engine**: blends derived features, growth deltas, and benchmark rules (e.g., <5% engagement, <2% weekly growth) to articulate probable **root causes** with confidence levels.
+6. **Pattern Learning Engine**: inspects the full snapshot history to surface personalized patterns (best time, best duration, repeated mistakes like not refreshing thumbnails after drops) and tracks improvement since prior strategies.
+7. **Recommendation Engine**: unifies diagnosis + patterns to emit prioritized, context-aware remediation steps (e.g., “Test 8–12 PM releases” or “A/B test hook in first 30 seconds”).
+8. **Output Formatter**: packages results into the required report sections (Performance Summary, Score Breakdown, Evidence, Root Cause, Recommendations, Growth Comparison) along with timestamp metadata.
+9. **Frontend Dashboard**: wires everything together, provides “Add Video” and “Analyze Now” controls, streams real-time status updates, and renders the coach’s language.
+
+## Data Flow Sequence
+1. User adds video ? Local Storage Manager registers metadata + placeholder snapshot.
+2. Dashboard triggers data ingestion ? YouTube API response feeds Feature Engineering.
+3. Features + Growth Engine produce insights ? Local Storage Manager persists new snapshot.
+4. Analysis and Pattern Engines explain the *why* ? Recommendation Engine suggests *what to do*.
+5. Output Formatter assembles sections ? Dashboard renders the coach narrative and stores `lastChecked` timestamps.
+
+## Local Storage Schema (JSON)
+```
+{
+  "videos": [
+    {
+      "videoId": "abc123",
+      "title": "Video Title",
+      "duration": 7.4,
+      "lastCheck": "2026-03-30T09:42:00Z",
+      "snapshots": [
+        {
+          "views": 2000,
+          "likes": 120,
+          "comments": 18,
+          "timestamp": "2026-03-28T08:00:00Z",
+          "engagementRate": 0.069,
+          "growthRate": 0.05,
+          "notes": "Initial snapshot"
+        }
+      ]
+    }
+  ],
+  "preferences": {
+    "thresholds": {
+      "engagement": 0.06,
+      "growth": 0.02
+    }
+  }
+}
+```
+Access through `JSON.parse(localStorage.getItem('ai-youtube-growth-coach') || '{}')` and `JSON.stringify` on writes.
+
+## Testing Strategy
+1. **Unit Tests** – verify formulas inside Feature Engineering (engagement, growth) and Growth Engine (velocity, delta) by isolating each function.
+2. **Snapshot Tests** – store multiple synthetic snapshots via the Storage Manager and assert that computed growth deltas match expectations.
+3. **Integration Tests** – simulate adding a video, running the analysis pipeline, persisting snapshots, reloading history, and ensuring the new `lastCheck` is consistent.
+4. **Real Testing Notes** – encourage running the app with a real YouTube video to validate high vs low performers and confirm API quotas.
+5. **Edge Cases** – special cases (no prior snapshot, zero views, viral spike) are guarded by defensive code paths (avoiding divide-by-zero, default growth values, and velocity smoothing).
+
+## UX Storyline
+The Dashboard surfaces saved videos immediately, shows the last-check timestamp, communicates growth since the last snapshot, provides an “Analyze Now” CTA, and keeps coaching language in the Performance Summary / Recommendations sections.
