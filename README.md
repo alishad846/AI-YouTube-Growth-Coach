@@ -57,7 +57,7 @@ A privacy-first personal coach that runs entirely in the browser, stores every i
      window.YOUTUBE_API_KEY = 'YOUR_API_KEY';
    </script>
    ```
-   Without a key, the ingestion layer falls back to synthetic data. You can also place your key inside the local-only `.venv/credentials.js` file (it loads before the app) so the dashboard sees it without risking commits.
+   Without a key, the ingestion layer falls back to synthetic data. For the default flow, copy `credentials.template.js` to `credentials.js`, fill in the `window.YOUTUBE_API_KEY` / `window.YOUTUBE_ANALYTICS_TOKEN` values, and deploy that file alongside `index.html`. Because `index.html` loads `./credentials.js`, every device (mobile or desktop) can fetch the same keys without relying on `.venv` directories. Keep `credentials.js` out of source control and replace the template whenever you rotate secrets.
 4. Optionally assign `window.YOUTUBE_ANALYTICS_TOKEN` (a refresh-token-enabled credential) and toggle the analytics connector in the UI to let the coach read impressions/CTR data; the system reverts to basic stats if the token or scopes are unavailable.
 5. Add a video via its ID (e.g., `dQw4w9WgXcQ`). The coach auto-saves the entry and keeps it in localStorage.
 6. Press **Analyze Now** to fetch live stats, compare snapshots, and surface diagnostics/recommendations.
