@@ -4,7 +4,6 @@ import {
   getDefaultApiKey,
   hasDefaultApiLimitReached,
   hasUserApiLimitReached,
-  markDefaultApiLimitReached,
   markUserApiLimitReached,
 } from './apiUsageAssistant.js';
 
@@ -196,10 +195,6 @@ export const DataIngestion = {
     let apiKey = apiContext.key;
     const isDefaultRequest =
       !apiContext.usingUserKey && Boolean(apiContext.defaultKey);
-    if (isDefaultRequest && !apiContext.defaultLimitReached) {
-      markDefaultApiLimitReached();
-      reportApiKeyUsage({ usingUserKey: false, fallback: false });
-    }
     if (!apiKey) {
       console.warn('No API key available; using offline simulation.');
       reportApiKeyUsage({
@@ -210,9 +205,6 @@ export const DataIngestion = {
     }
     try {
       const payload = await fetchFromYouTube(videoId, apiKey);
-      if (!apiContext.usingUserKey && !apiContext.defaultLimitReached) {
-        markDefaultApiLimitReached();
-      }
       reportApiKeyUsage({
         usingUserKey: apiContext.usingUserKey,
         fallback: false,
@@ -234,9 +226,6 @@ export const DataIngestion = {
         if (apiContext.defaultKey) {
           try {
             const payload = await fetchFromYouTube(videoId, apiContext.defaultKey);
-            if (!apiContext.defaultLimitReached) {
-              markDefaultApiLimitReached();
-            }
             reportApiKeyUsage({
               usingUserKey: false,
               fallback: true,

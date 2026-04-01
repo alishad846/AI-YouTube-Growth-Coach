@@ -2,7 +2,10 @@ const STORAGE_KEYS = {
   defaultLimit: 'YT_DEFAULT_API_LIMIT_REACHED',
   userLimit: 'YT_USER_API_LIMIT_REACHED',
   userKey: 'YOUTUBE_API_KEY',
+  defaultUsageCount: 'YT_DEFAULT_API_USAGE_COUNT',
 };
+
+const MAX_DEFAULT_API_USES = 1;
 
 function getStorageArea() {
   if (typeof localStorage !== 'undefined') {
@@ -34,8 +37,41 @@ export function markDefaultApiLimitReached() {
   getStorageArea().setItem(STORAGE_KEYS.defaultLimit, '1');
 }
 
+function getDefaultUsageCount() {
+  const raw = getStorageArea().getItem(STORAGE_KEYS.defaultUsageCount);
+  return Number(raw) || 0;
+}
+
+function setDefaultUsageCount(value) {
+  getStorageArea().setItem(
+    STORAGE_KEYS.defaultUsageCount,
+    String(Math.max(0, Number(value) || 0)),
+  );
+}
+
+function resetDefaultUsageCount() {
+  getStorageArea().removeItem(STORAGE_KEYS.defaultUsageCount);
+}
+
+export function canUseDefaultApi() {
+  return getDefaultUsageCount() < MAX_DEFAULT_API_USES;
+}
+
+export function incrementDefaultApiUsage() {
+  const next = getDefaultUsageCount() + 1;
+  setDefaultUsageCount(next);
+  if (next >= MAX_DEFAULT_API_USES) {
+    markDefaultApiLimitReached();
+  }
+  return next;
+}
 export function clearDefaultApiLimitReached() {
   getStorageArea().removeItem(STORAGE_KEYS.defaultLimit);
+  resetDefaultUsageCount();
+}
+
+export function isDefaultLimitStale() {
+  return hasDefaultApiLimitReached() && getDefaultUsageCount() === 0;
 }
 
 export function hasUserApiLimitReached() {
@@ -99,4 +135,12 @@ export function isUsingUserKey() {
 
 export function shouldShowApiKeyInput() {
   return hasDefaultApiLimitReached() || hasUserApiLimitReached();
+}
+
+export function getDefaultApiUsageCount() {
+  return getDefaultUsageCount();
+}
+
+export function getDefaultApiUsageRemaining() {
+  return Math.max(MAX_DEFAULT_API_USES - getDefaultUsageCount(), 0);
 }

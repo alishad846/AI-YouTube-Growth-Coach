@@ -32,9 +32,14 @@ import {
   hasDefaultApiLimitReached,
   hasUserApiLimitReached,
   isApiKeyFormatValid,
+  canUseDefaultApi,
+  incrementDefaultApiUsage,
+  getDefaultApiUsageRemaining,
   removeStoredUserKey,
   setStoredUserKey,
   shouldShowApiKeyInput,
+  clearDefaultApiLimitReached,
+  isDefaultLimitStale,
 } from "../modules/apiUsageAssistant.js";
 
 const escapeHtml = (value = "") =>
@@ -77,9 +82,14 @@ export class Dashboard {
     this.learningLoop = new ContinuousLearningLoop(() =>
       this.refreshPatterns(),
     );
+    this._allowDefaultRequest = false;
+    this._defaultRequestPending = false;
   }
 
   init() {
+    if (isDefaultLimitStale()) {
+      clearDefaultApiLimitReached();
+    }
     this.config = getAppConfig();
     this.root.innerHTML = `
       <div class="coach-shell">
@@ -90,106 +100,185 @@ export class Dashboard {
           </div>
           <div id="status-line" class="status-line"></div>
         </header>
-        <section class="hero">
-          <form id="video-form" class="video-form">
-            <label>Video ID
-              <input name="videoId" placeholder="YouTube ID (e.g. dQw4w9WgXcQ)" required />
-            </label>
-            <label>Friendly title (optional)
-              <input name="title" placeholder="Channel naming" />
-            </label>
-            <label>Duration (min)
-              <input name="duration" type="number" min="0" step="0.1" />
-            </label>
-            <button type="submit" class="primary">Save + Auto-track</button>
-          </form>
-          <div id="pattern-highlights" class="pattern-highlights">
-            <p class="muted">Patterns will surface after you analyze videos.</p>
-            <p class="muted timing-note">${deriveTimingWindowLabel(this.config)}</p>
-          </div>
-          <div class="analytics-toggle">
-            <label>
-              <input id="analytics-toggle" type="checkbox" ${this.config.analytics?.enableReports ? "checked" : ""} />
-              Enable analytics connector
-            </label>
-            <p id="analytics-hint" class="muted">${this.computeAnalyticsHint()}</p>
-          </div>
-          <div id="api-key-status" class="api-key-status">
-            <div class="api-key-status__header">
-              <p class="api-key-status__label">Using default API</p>
-              <button id="api-key-default-reset" type="button" class="secondary api-key-status__button">
-                Use default API
-              </button>
-            </div>
-            <p class="api-key-status__summary muted"></p>
-            <div
-              class="api-key-status__alert api-key-status__alert--default is-hidden"
-              data-default-alert
-            >
-              <strong>⚠️ Default API usage limit reached</strong>
-              <p>You have exhausted your current default API limit.</p>
-              <p>To continue using the service, you need to provide your own YouTube API key.</p>
-              <ul>
-                <li>Request access from the admin to continue using the default API</li>
-                <li>Add your own API key to proceed</li>
-              </ul>
-              <p>Click below to add your API key and continue.</p>
-              <p class="muted">
-                Download the provided
-                <a href="./docs/api-setup-guide.pdf" target="_blank" rel="noopener">
-                  API setup guide (PDF)
-                </a>
-                and follow the step-by-step instructions inside the PDF to obtain and enter your credentials. Once added, the service will activate immediately without errors.
-              </p>
-            </div>
-            <div
-              class="api-key-status__alert api-key-status__alert--user is-hidden"
-              data-user-alert
-            >
-              <strong>⚠️ User API limit reached</strong>
-              <p>You have exhausted your API usage limit.</p>
-              <p>You are currently unable to make further requests.</p>
-              <ul>
-                <li>Add a new API key</li>
-                <li>Or wait for your quota to reset</li>
-              </ul>
-              <p>Click below to add a new API key.</p>
-            </div>
-            <div class="api-key-input is-hidden" data-api-input>
-              <p class="api-key-input__title">Enter your YouTube API key to continue.</p>
-              <div class="api-key-input__row">
-                <input
-                  id="api-key-input"
-                  type="text"
-                  class="api-key-input__field"
-                  placeholder="AIza... (Your API key)"
-                  autocomplete="off"
-                />
-                <button
-                  id="api-key-add-button"
-                  type="button"
-                  class="primary api-key-input__button"
-                  disabled
-                >
-                  Add API key
+        <div class="dashboard-grid">
+          <aside class="input-column">
+            <article class="panel card card--spacious">
+              <div class="panel__head">
+                <div>
+                  <h3>Video details</h3>
+                  <p class="muted">Save a YouTube ID, optional title, and duration before analyzing.</p>
+                </div>
+                <span class="badge badge--subtle">Compact form</span>
+              </div>
+              <form id="video-form" class="video-form">
+                <label>
+                  <span>Video ID</span>
+                  <input name="videoId" placeholder="YouTube ID (e.g. dQw4w9WgXcQ)" required />
+                </label>
+                <label>
+                  <span>Friendly title (optional)</span>
+                  <input name="title" placeholder="Channel naming" />
+                </label>
+                <label>
+                  <span>Duration (min)</span>
+                  <input name="duration" type="number" min="0" step="0.1" />
+                </label>
+                <button type="submit" class="primary">Save + Auto-track</button>
+              </form>
+            </article>
+            <article class="panel card card--spacious">
+              <div class="panel__head">
+                <h3>Pattern highlights</h3>
+                <p class="muted">Best timing, runtime, and momentum signals.</p>
+              </div>
+              <div id="pattern-highlights" class="pattern-highlights">
+                <p class="muted">Patterns will surface after you analyze videos.</p>
+                <p class="muted timing-note">${deriveTimingWindowLabel(this.config)}</p>
+              </div>
+            </article>
+            <article class="panel card card--spacious api-panel">
+              <div class="panel__head">
+                <div>
+                  <h3>API access</h3>
+                  <p class="muted">Switch between the default key and your own token.</p>
+                </div>
+                <button id="api-key-default-reset" type="button" class="secondary api-key-status__button">
+                  Use default API
                 </button>
               </div>
-              <p class="api-key-input__hint">To generate your API key:</p>
-              <ol class="api-key-input__steps">
-                <li>Go to Google Cloud Console</li>
-                <li>Create or select a project</li>
-                <li>Enable YouTube Data API v3</li>
-                <li>Go to Credentials</li>
-                <li>Create an API key</li>
-                <li>Copy and paste it here</li>
-              </ol>
-              <p class="api-key-input__hint">After adding your API key, the service will resume immediately.</p>
-              <p class="api-key-input__error error is-hidden" data-api-error>
-                Invalid API key. Please check and try again.
-              </p>
-            </div>
-          </div>
-        </section>
+              <div id="api-key-status" class="api-key-status">
+                <div class="api-status-row">
+                  <div class="api-status-main">
+                    <p class="api-key-status__label">Using default API</p>
+                    <p class="api-key-status__summary muted"></p>
+                    <div class="api-status-actions">
+                      <span class="status-pill status-pill--critical is-hidden" data-status-pill>
+                        Default API locked
+                      </span>
+                    </div>
+                  </div>
+                  <div class="api-alerts-row">
+                    <div
+                      class="api-key-status__alert api-key-status__alert--default is-hidden"
+                      data-default-alert
+                    >
+                      <strong>🚨 Default API usage limit reached</strong>
+                      <p>You have exhausted your current default API limit.</p>
+                      <p>To continue using the service, provide your own YouTube API key.</p>
+                      <ul>
+                        <li>Request admin access to keep using the default API</li>
+                        <li>Add your own API key to proceed</li>
+                      </ul>
+                      <p>Click below to add your API key and continue.</p>
+                    </div>
+                    <div
+                      class="api-key-status__alert api-key-status__alert--user is-hidden"
+                      data-user-alert
+                    >
+                      <strong>🚨 User API limit reached</strong>
+                      <p>You have exhausted your API usage limit.</p>
+                      <p>Provide a new API key to restore service.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="api-key-input is-hidden" data-api-input>
+                  <p class="api-key-input__title">Enter your YouTube API key to continue.</p>
+                  <div class="api-key-input__row">
+                    <input
+                      id="api-key-input"
+                      type="text"
+                      class="api-key-input__field"
+                      placeholder="AIza... (Your API key)"
+                      autocomplete="off"
+                    />
+                    <button
+                      id="api-key-add-button"
+                      type="button"
+                      class="primary api-key-input__button"
+                      disabled
+                    >
+                      Add API key
+                    </button>
+                  </div>
+                  <p class="api-key-input__hint">To generate your API key:</p>
+                  <ol class="api-key-input__steps">
+                    <li>Go to Google Cloud Console</li>
+                    <li>Create or select a project</li>
+                    <li>Enable YouTube Data API v3</li>
+                    <li>Go to Credentials</li>
+                    <li>Create an API key</li>
+                    <li>Copy and paste it here</li>
+                  </ol>
+                  <p class="api-key-input__hint">After adding your API key, the service will resume immediately.</p>
+                  <p class="api-key-input__error error is-hidden" data-api-error>
+                    Invalid API key. Please check and try again.
+                  </p>
+                </div>
+              </div>
+              <details class="api-key-details">
+                <summary>Need help adding credentials?</summary>
+                <p class="muted">
+                  Download the
+                  <a href="./docs/api-setup-guide.pdf" target="_blank" rel="noopener">API setup guide (PDF)</a>
+                  and follow the steps inside the document.
+                </p>
+              </details>
+            </article>
+          </aside>
+          <section class="analytics-column">
+            <article class="panel card card--spacious key-insights">
+              <div class="panel__head">
+                <div>
+                  <h3>Key insights</h3>
+                  <p class="muted">Priority intelligence for your next move.</p>
+                </div>
+                <span class="badge badge--accent">Priority</span>
+              </div>
+              <div class="key-insights-grid">
+                <div>
+                  <p class="muted">Release window</p>
+                  <strong>${deriveTimingWindowLabel(this.config)}</strong>
+                </div>
+                <div>
+                  <p class="muted">Analytics connector</p>
+                  <strong>${this.computeAnalyticsHint()}</strong>
+                </div>
+                <div>
+                  <p class="muted">Momentum trend</p>
+                  <strong>Awaiting first analysis</strong>
+                </div>
+                <div>
+                  <p class="muted">Engagement focus</p>
+                  <strong>Track after next run</strong>
+                </div>
+              </div>
+              </article>
+              <article class="panel card card--spacious cta-card">
+                <div class="panel__head">
+                  <div>
+                    <h3>Action center</h3>
+                    <p class="muted">One tap to refresh the coach, highlight momentum, and warm the analytics pool.</p>
+                  </div>
+                </div>
+                <p class="cta-card__text">Analyze everything in one go, auto-refresh timelines, and keep the coach live.</p>
+                <button id="priority-analyze" class="primary cta-button">Run priority analysis</button>
+              </article>
+            <article class="panel card card--spacious">
+              <div class="panel__head">
+                <h3>Analytics connector</h3>
+                <p class="muted">Enable reach/CTR data for richer diagnostics.</p>
+              </div>
+              <div class="analytics-toggle">
+                <label>
+                  <input id="analytics-toggle" type="checkbox" ${this.config.analytics?.enableReports ? "checked" : ""} />
+                  Enable analytics connector
+                </label>
+                <p id="analytics-hint" class="muted">${this.computeAnalyticsHint()}</p>
+              </div>
+            </article>
+          </section>
+        </div>
+
         <section class="insight-grid">
           <article class="insight-card">
             <header>
@@ -300,7 +389,12 @@ export class Dashboard {
       form.reset();
       this.refreshVideoCards();
       this.refreshPatterns();
-      this.setStatus("Video registered locally. Press Analyze Now when ready.");
+      this.setStatus("Video registered locally. Auto-tracking the new entry...");
+      const card = this.findCardForVideo(videoId);
+      this.prepareDefaultUsage();
+      if (card) {
+        this.handleAnalyze(videoId, card).catch(() => {});
+      }
     });
   }
 
@@ -359,6 +453,7 @@ export class Dashboard {
     this.apiKeyInputError = this.apiKeyStatusContainer.querySelector(
       "[data-api-error]",
     );
+    this.apiStatusPill = this.apiKeyStatusContainer.querySelector("[data-status-pill]");
 
     this.apiKeyStatusButton?.addEventListener("click", () => {
       if (hasDefaultApiLimitReached()) {
@@ -427,7 +522,67 @@ export class Dashboard {
     window.addEventListener("api-key-status", (event) => {
       this.renderApiKeyStatus(event.detail);
     });
-    this.renderApiKeyStatus();
+    if (getStoredUserKey()) {
+      this.renderApiKeyStatus();
+    } else {
+      this.publishDefaultStatus();
+    }
+  }
+
+  resetDefaultRequestState() {
+    this._allowDefaultRequest = false;
+    this._defaultRequestPending = false;
+  }
+
+  publishDefaultStatus(detail = {}) {
+    const defaultLimit = hasDefaultApiLimitReached();
+    const remaining = getDefaultApiUsageRemaining();
+    const remainingLabel =
+      remaining > 1
+        ? `${remaining} requests remaining`
+        : remaining === 1
+        ? "1 request remaining"
+        : "no requests remaining";
+    const summary =
+      detail.successMessage ??
+      (defaultLimit
+        ? "Default API is locked after the free requests; add a key to stay connected."
+        : `Default API is active; ${remainingLabel} before it locks.`);
+    const payload = {
+      usingUserKey: detail.usingUserKey ?? false,
+      defaultLimitReached: detail.defaultLimitReached ?? defaultLimit,
+      showInput: detail.showInput ?? defaultLimit,
+      successMessage: summary,
+      ...detail,
+    };
+    this.renderApiKeyStatus(payload);
+  }
+
+  prepareDefaultUsage() {
+    if (Boolean(getStoredUserKey())) {
+      this.resetDefaultRequestState();
+      return false;
+    }
+    if (hasDefaultApiLimitReached() || !canUseDefaultApi()) {
+      this.resetDefaultRequestState();
+      this.publishDefaultStatus();
+      return false;
+    }
+    if (this._defaultRequestPending) {
+      this._allowDefaultRequest = true;
+      return true;
+    }
+    this._allowDefaultRequest = true;
+    this._defaultRequestPending = true;
+    this.publishDefaultStatus();
+    return true;
+  }
+
+  recordDefaultUsage() {
+    this._defaultRequestPending = false;
+    this._allowDefaultRequest = false;
+    incrementDefaultApiUsage();
+    this.publishDefaultStatus();
   }
 
   renderApiKeyStatus(detail = {}) {
@@ -473,6 +628,10 @@ export class Dashboard {
     }
     if (this.apiKeyAddButton) {
       this.apiKeyAddButton.disabled = !showInput;
+      this.apiKeyAddButton.classList.toggle(
+        "api-key-input__button--highlight",
+        showInput,
+      );
     }
     if (this.apiKeyInputError) {
       this.apiKeyInputError.classList.toggle("is-hidden", !detail.invalidKey);
@@ -480,7 +639,14 @@ export class Dashboard {
     if (this.apiKeyStatusButton) {
       this.apiKeyStatusButton.disabled = defaultLimit;
     }
+    if (this.apiStatusPill) {
+      this.apiStatusPill.classList.toggle(
+        "is-hidden",
+        !(defaultLimit && !usingUser),
+      );
+    }
     this.syncAnalyzeButtonsState();
+    this.syncFormState();
   }
 
   syncAnalyzeButtonsState() {
@@ -507,6 +673,31 @@ export class Dashboard {
         batchAnalyze.removeAttribute("title");
       }
     }
+    const priorityAnalyze = this.root.querySelector("#priority-analyze");
+    if (priorityAnalyze) {
+      priorityAnalyze.disabled = disabled;
+      if (disabled) {
+        priorityAnalyze.title =
+          "Default API limit reached. Add a key before running priority analysis.";
+      } else {
+        priorityAnalyze.removeAttribute("title");
+      }
+    }
+  }
+
+  syncFormState() {
+    const form = this.root.querySelector("#video-form");
+    if (!form) return;
+    const submit = form.querySelector("button[type='submit']");
+    const disabled = hasDefaultApiLimitReached() && !getStoredUserKey();
+    if (submit) {
+      submit.disabled = disabled;
+      if (disabled) {
+        submit.title = "Default API limit reached. Add an API key before saving new videos.";
+      } else {
+        submit.removeAttribute("title");
+      }
+    }
   }
 
   renderNotifications() {
@@ -530,6 +721,11 @@ export class Dashboard {
   attachAutomationControls() {
     const analyzeAllBtn = this.root.querySelector("#batch-analyze");
     analyzeAllBtn?.addEventListener("click", () => this.safeBatchAnalyze());
+    const priorityBtn = this.root.querySelector("#priority-analyze");
+    priorityBtn?.addEventListener("click", () => {
+      this.setStatus("Running priority analysis across saved videos…");
+      this.safeBatchAnalyze();
+    });
     const rollbackBtn = this.root.querySelector("#rollback-latest");
     rollbackBtn?.addEventListener("click", () => this.applyRollback());
     const continuousToggle = this.root.querySelector(
@@ -688,17 +884,22 @@ export class Dashboard {
     );
     const displayTitle = videoRecord?.title?.trim() || "This video";
     this.setStatus(`Analyzing ${displayTitle} via YouTube Data API...`);
+    const usingUserKey = Boolean(getStoredUserKey());
+    if (!usingUserKey) {
+      this.prepareDefaultUsage();
+    }
+    const defaultAllowed = this._allowDefaultRequest;
     const defaultLocked =
-      hasDefaultApiLimitReached() && !getStoredUserKey();
+      hasDefaultApiLimitReached() && !usingUserKey && !defaultAllowed;
     if (defaultLocked) {
       this.setStatus("Default API limit reached. Add your API key to continue.");
-      this.renderApiKeyStatus({
-        usingUserKey: false,
-        defaultLimitReached: true,
+      this.publishDefaultStatus({
         showInput: true,
+        defaultLimitReached: true,
       });
       return;
     }
+    const attemptedDefaultRequest = !usingUserKey && defaultAllowed;
     try {
       const result = await AutoPatchEngine.applyPatch("analysis", () =>
         this.pipeline.run(videoId),
@@ -717,26 +918,25 @@ export class Dashboard {
       this.lastAnalyzedVideoId = videoId;
       this.config = result.config;
       this.renderReport(report, target, projection);
-      if (updatedVideo) {
-        this.updateCardMetadata(card, updatedVideo);
-      }
-      this.renderPatternHighlights(patterns, behaviorSummary, projection);
       this.renderCardAlerts(card, alerts);
       this.renderAlertStream(alerts);
-      this.setStatus("Analysis complete. The coach saved a new snapshot.");
-      } catch (error) {
-        target.innerHTML = `<p class="muted error">Coach hiccup: ${error.message}</p>`;
-        NotificationSystem.notify(
-          `Analysis failed for ${displayTitle}: ${error.message}`,
-        );
-        this.renderAlertStream([
-          `Analysis failed for ${displayTitle}: ${error.message}`,
-        ]);
-        this.setStatus("Unable to fetch live data. Check console for details.");
+    } catch (error) {
+      console.error(error);
+      this.renderApiKeyStatus({
+        usingUserKey: false,
+        fallback: false,
+      });
+      target.innerHTML = `<p class="muted">Analysis failed: ${error.message}</p>`;
+      this.setStatus(error.message);
+      return;
+    } finally {
+      if (attemptedDefaultRequest) {
+        this.recordDefaultUsage();
       }
+    }
   }
 
-﻿  renderReport(report, target, projection = {}) {
+  renderReport(report, target, projection = {}) {
     const scoreBreakdown = report.scoreBreakdown || {};
     const growthComparison = report.growthComparison || {};
     const deltaViews = growthComparison.deltaViews ?? 0;
@@ -789,14 +989,14 @@ export class Dashboard {
     const alerts = [];
     if (velocity <= 0) {
       alerts.push({
-        icon: "🚨",
+        icon: "??",
         title: "Velocity = 0",
         detail: "New views have flatlined; act now.",
         severity: "critical",
       });
     } else {
       alerts.push({
-        icon: "🔥",
+        icon: "??",
         title: "Velocity rallying",
         detail: `Running at ${velocity.toFixed(0)} views/hr; stay aggressive!`,
         severity: "good",
@@ -804,14 +1004,14 @@ export class Dashboard {
     }
     if (growthRate < 0) {
       alerts.push({
-        icon: "⚠️",
+        icon: "??",
         title: "Growth slowing",
         detail: "Playlist cadence is not keeping up with competition.",
         severity: "warning",
       });
     } else {
       alerts.push({
-        icon: "📈",
+        icon: "??",
         title: "Growth holding",
         detail: `Variance ${growthComparison.varianceFormatted || "0"}; trend looks ${(growthComparison.variance || 0) >= 0 ? "positive" : "negative"}.`,
         severity: "good",
@@ -819,14 +1019,14 @@ export class Dashboard {
     }
     if (engagementRate >= 0.1) {
       alerts.push({
-        icon: "✅",
+        icon: "?",
         title: "Engagement healthy",
         detail: "Hooks are resonating; leverage that confidence.",
         severity: "good",
       });
     } else {
       alerts.push({
-        icon: "🧭",
+        icon: "??",
         title: "Engagement needs work",
         detail: "Try new hook variants to lift interest.",
         severity: "warning",
@@ -837,7 +1037,7 @@ export class Dashboard {
     const predictedChange = Math.round(projectedVelocity * predictionHours);
     const projectionVerb = predictedChange >= 0 ? "gain" : "drop";
     const projectionText = projectedVelocity
-      ? `If no action is taken → expect a ${Math.abs(predictedChange).toLocaleString()} view ${projectionVerb} over the next ${predictionHours}h.`
+      ? `If no action is taken ? expect a ${Math.abs(predictedChange).toLocaleString()} view ${projectionVerb} over the next ${predictionHours}h.`
       : "Projection warming up; run another analysis soon.";
     const projectionTarget = projection.projection
       ? `Projection target: ${projection.projection.toLocaleString()} views.`
@@ -845,7 +1045,7 @@ export class Dashboard {
     const rangeInfo = growthComparison.range || {};
     const rangeLabel =
       rangeInfo.start && rangeInfo.end
-        ? `Range: ${new Date(rangeInfo.start).toLocaleString()} \u2192 ${new Date(
+        ? `Range: ${new Date(rangeInfo.start).toLocaleString()} ? ${new Date(
             rangeInfo.end,
           ).toLocaleString()}`
         : growthComparison.timestamp
@@ -853,7 +1053,7 @@ export class Dashboard {
         : "Range not available yet.";
     const trendDescriptor =
       deltaViews > 0 && velocity < 200
-        ? "Momentum rising but velocity stalled \u2192 mismatch detected"
+        ? "Momentum rising but velocity stalled ? mismatch detected"
         : deltaViews > 0
         ? "Momentum rising steadily"
         : deltaViews < 0
@@ -871,7 +1071,61 @@ export class Dashboard {
         : growthRate >= 0
         ? "Holding steady vs recent history."
         : "Growth is negative; deploy a burst campaign.";
-    const trendArrow = deltaViews >= 0 ? "↑" : "↓";
+    const metricCards = [
+      {
+        title: "Engagement",
+        icon: "??",
+        value: (engagementRate || 0).toFixed(3),
+        context: engagementContext,
+        severity: engagementRate >= 0.12 ? "good" : engagementRate >= 0.08 ? "neutral" : "warning",
+      },
+      {
+        title: "Growth rate",
+        icon: "??",
+        value: (growthRate || 0).toFixed(3),
+        context: growthContext,
+        severity: growthRate >= 0.02 ? "good" : growthRate >= 0 ? "neutral" : "warning",
+      },
+      {
+        title: "Velocity",
+        icon: "?",
+        value: `${(velocity || 0).toFixed(1)} views/hr`,
+        context:
+          deltaViews >= 0
+            ? "Velocity supporting current growth."
+            : "Velocity trailing the recent trend.",
+        severity:
+          velocity <= 0 ? "critical" : velocity < 200 ? "warning" : "good",
+      },
+    ];
+    const behaviorCard = `
+      <article class="card insight-card insight-card--behavior">
+        <div class="card-title-row">
+          <span class="card-icon">??</span>
+          <h4>Behavior summary</h4>
+        </div>
+        <div class="card-divider"></div>
+        <p class="card-value">${deltaViews >= 0 ? "+" : ""}${deltaViews} views</p>
+        <p class="card-context muted">${trendDescriptor}</p>
+        <p class="card-context muted">Velocity ${velocity.toFixed(1)} views/hr</p>
+      </article>
+    `;
+    const projectionValue =
+      projection.projection != null ? projection.projection.toLocaleString() : "Awaiting run";
+    const projectionVelocity =
+      projection.velocity != null ? `${projection.velocity.toFixed(1)} views/hr` : "Pending";
+    const projectionCard = `
+      <article class="card insight-card insight-card--projection">
+        <div class="card-title-row">
+          <span class="card-icon">???</span>
+          <h4>Projection</h4>
+        </div>
+        <div class="card-divider"></div>
+        <p class="card-value">${projectionValue}</p>
+        <p class="card-context muted">${projectionText}</p>
+        <p class="card-context muted">Momentum ${projectionVelocity}</p>
+      </article>
+    `;
     const alertMarkup = alerts
       .map(
         (alert) => `
@@ -885,34 +1139,27 @@ export class Dashboard {
         `,
       )
       .join("");
-
     target.innerHTML = `
-      <div class="report-highlight-grid">
-        <article class="report-highlight ${deltaViews > 0 ? "report-highlight--positive" : deltaViews < 0 ? "report-highlight--negative" : "report-highlight--neutral"}">
-          <header>
-            <h4>Performance score</h4>
-            <span class="trend-indicator">${trendArrow} ${trendDescriptor}</span>
-          </header>
-          <p class="report-highlight__value">${Math.round(
-            scoreBreakdown.performanceScore || 0,
-          )}/100</p>
-          <p class="report-highlight__context">${report.performanceSummary}</p>
-        </article>
-        <article class="report-highlight">
-          <h4>Engagement</h4>
-          <p class="report-highlight__value">${(engagementRate || 0).toFixed(3)}</p>
-          <p class="report-highlight__context">${engagementContext}</p>
-        </article>
-        <article class="report-highlight">
-          <h4>Growth rate</h4>
-          <p class="report-highlight__value">${(growthRate || 0).toFixed(3)}</p>
-          <p class="report-highlight__context">${growthContext}</p>
-        </article>
-        <article class="report-highlight">
-          <h4>Velocity</h4>
-          <p class="report-highlight__value">${velocity.toFixed(1)} views/hr</p>
-          <p class="report-highlight__context">${deltaViews >= 0 ? "Velocity is supporting current growth." : "Velocity is trending below expectation."}</p>
-        </article>
+      <div class="card-grid metric-row">
+        ${metricCards
+          .map(
+            (metric) => `
+              <article class="card metric-card metric-card--${metric.severity}">
+                <div class="card-title-row">
+                  <span class="card-icon">${metric.icon}</span>
+                  <h4>${metric.title}</h4>
+                </div>
+                <div class="card-divider"></div>
+                <p class="card-value">${metric.value}</p>
+                <p class="card-context muted">${metric.context}</p>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      <div class="card-grid insight-row">
+        ${behaviorCard}
+        ${projectionCard}
       </div>
       <div class="priority-area">
         <article class="priority-card priority-card--${severityClass}">
@@ -938,7 +1185,6 @@ export class Dashboard {
         <p class="analysis-summary__heading">${report.performanceSummary}</p>
         <p>${report.evidence}</p>
         <p class="muted">${rangeLabel}</p>
-        <p class="muted">${projectionText}</p>
         <p class="muted">${projectionTarget}</p>
         <p class="muted">${report.analyticsSummary}</p>
       </div>
@@ -953,7 +1199,7 @@ export class Dashboard {
             <span>Expected vs actual</span>
             <strong>${
               report.growthComparison.expectedViewsFormatted || "N/A"
-            } \u2192 ${report.growthComparison.actualViewsFormatted || "N/A"}</strong>
+            } ? ${report.growthComparison.actualViewsFormatted || "N/A"}</strong>
           </div>
           <div class="growth-grid__item">
             <span>Variance</span>
@@ -1002,6 +1248,7 @@ export class Dashboard {
       </section>
     `;
   }
+
   renderPatternHighlights(patterns, behaviorSummary = {}, projection = {}) {
     const section = this.root.querySelector("#pattern-highlights");
     if (!section) return;
@@ -1244,3 +1491,4 @@ export class Dashboard {
     timeline.innerHTML = `<h4>Growth story</h4>${lines}`;
   }
 }
+
