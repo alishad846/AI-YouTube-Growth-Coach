@@ -223,6 +223,13 @@ export const DataIngestion = {
           userLimitReached: true,
           invalidKey,
         });
+        if (invalidKey) {
+          throw new YouTubeApiError(
+            "Your API key was rejected. Please add a valid key to continue.",
+            error.status,
+            'invalid_key',
+          );
+        }
         if (apiContext.defaultKey) {
           try {
             const payload = await fetchFromYouTube(videoId, apiContext.defaultKey);

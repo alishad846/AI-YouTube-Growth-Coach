@@ -27,7 +27,9 @@ import {
   FunctionLevelPatching,
   AutoRecommendationExecutor,
 } from "../modules/systemCapabilities.js";
-import {
+import * as ApiUsageAssistant from "../modules/apiUsageAssistant.js";
+
+const {
   getStoredUserKey,
   hasDefaultApiLimitReached,
   hasUserApiLimitReached,
@@ -39,8 +41,12 @@ import {
   setStoredUserKey,
   shouldShowApiKeyInput,
   clearDefaultApiLimitReached,
-  isDefaultLimitStale,
-} from "../modules/apiUsageAssistant.js";
+} = ApiUsageAssistant;
+
+const safeIsDefaultLimitStale =
+  typeof ApiUsageAssistant.isDefaultLimitStale === "function"
+    ? ApiUsageAssistant.isDefaultLimitStale
+    : () => false;
 
 const escapeHtml = (value = "") =>
   String(value)
@@ -87,7 +93,7 @@ export class Dashboard {
   }
 
   init() {
-    if (isDefaultLimitStale()) {
+    if (safeIsDefaultLimitStale()) {
       clearDefaultApiLimitReached();
     }
     this.config = getAppConfig();
@@ -348,6 +354,30 @@ export class Dashboard {
         </section>
         <section id="alert-stream" class="alert-stream"></section>
         <section id="video-list" class="video-list"></section>
+        <footer class="dashboard-footer">
+          <p>
+            Made by <strong>Shad Ali</strong> — AI/ML Engineer.
+          </p>
+          <div class="dashboard-footer__links">
+            <a href="https://www.linkedin.com/in/shad-ali-099a82145/" target="_blank" rel="noreferrer">
+              <span class="dashboard-footer__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 4h4v16H4zm6 0h4v16h-4zm6 6h4v10h-4z" />
+                </svg>
+              </span>
+              LinkedIn
+            </a>
+            <span>•</span>
+            <a href="https://github.com/alishad846" target="_blank" rel="noreferrer">
+              <span class="dashboard-footer__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2c-3 0-5 1.9-5 5 0 3.5 3 6 5 6s5-2.5 5-6c0-3.1-2-5-5-5zm0 12c-5 0-7 2.4-7 7h14c0-4.6-2-7-7-7z" />
+                </svg>
+              </span>
+              GitHub
+            </a>
+          </div>
+        </footer>
       </div>
     `;
     this.statusEl = this.root.querySelector("#status-line");

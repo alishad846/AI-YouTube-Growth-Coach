@@ -121,3 +121,5 @@ Patterns: Best timing 20:0021:00, Best duration 6.5 mins, Improvement: +0.004 en
 ## Notes
 - No data leaves the browser; every snapshot and preference is stored in `localStorage`.
 - The system simulates snapshots via `growthSnapshotEngine` and summarizes them through `formatter.js` so the UI always feels like a coach narrative rather than a dashboard.
+
+Made by Shad Ali — AI/ML Engineer.

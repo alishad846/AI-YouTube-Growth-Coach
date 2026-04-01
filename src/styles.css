@@ -161,24 +161,42 @@ body {
 
 .primary {
   border: none;
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  color: #031217;
-  border-radius: 999px;
-  padding: 0.75rem 1.6rem;
+  background: linear-gradient(135deg, #f6dac5, #f3c38c);
+  color: #2b1b0f;
+  border-radius: 16px;
+  padding: 0.25rem 0.9rem;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.75rem;
   transition: transform 0.2s ease, filter 0.2s ease;
+  animation: floatPulse 4s ease-in-out infinite;
+  letter-spacing: 0.06em;
 }
 
 .primary:hover {
   transform: translateY(-1px);
-  filter: brightness(1.05);
+  filter: brightness(1.25);
+  animation-play-state: paused;
 }
 
 .primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+@keyframes floatPulse {
+  0% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+  }
+  100% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
 }
 
 .secondary {
@@ -618,6 +636,55 @@ body {
   background: rgba(255, 255, 255, 0.02);
   padding: 1.2rem;
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.35);
+}
+
+.dashboard-footer {
+  margin-top: 1rem;
+  padding: 0.4rem 0.9rem;
+  text-align: center;
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 38, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.75rem;
+  color: var(--muted);
+  align-self: center;
+  max-width: 360px;
+  width: auto;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: center;
+  position: sticky;
+  bottom: 1.25rem;
+  z-index: 2;
+}
+
+.dashboard-footer__links {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.dashboard-footer__links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.dashboard-footer__links a:hover {
+  text-decoration: underline;
+}
+
+.dashboard-footer__icon svg {
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
 }
 
 .video-card__header {
