@@ -194,6 +194,12 @@ export const DataIngestion = {
   async fetchVideo(videoId) {
     const apiContext = getApiContext();
     let apiKey = apiContext.key;
+    const isDefaultRequest =
+      !apiContext.usingUserKey && Boolean(apiContext.defaultKey);
+    if (isDefaultRequest && !apiContext.defaultLimitReached) {
+      markDefaultApiLimitReached();
+      reportApiKeyUsage({ usingUserKey: false, fallback: false });
+    }
     if (!apiKey) {
       console.warn('No API key available; using offline simulation.');
       reportApiKeyUsage({

@@ -312,6 +312,7 @@ export class Dashboard {
     if (!videos.length) {
       list.innerHTML =
         '<p class="muted">No videos yet. Add one and keep the coach locally.</p>';
+      this.syncAnalyzeButtonsState();
       return;
     }
     videos.forEach((video) => {
@@ -321,6 +322,7 @@ export class Dashboard {
       this.renderTimeline(card, snapshots);
       this.renderCardAlerts(card, []);
     });
+    this.syncAnalyzeButtonsState();
   }
 
   findCardForVideo(videoId) {
@@ -477,6 +479,33 @@ export class Dashboard {
     }
     if (this.apiKeyStatusButton) {
       this.apiKeyStatusButton.disabled = defaultLimit;
+    }
+    this.syncAnalyzeButtonsState();
+  }
+
+  syncAnalyzeButtonsState() {
+    const disabled = hasDefaultApiLimitReached() && !getStoredUserKey();
+    const buttons = this.root.querySelectorAll(".analyze-btn");
+    buttons.forEach((button) => {
+      button.disabled = disabled;
+      if (disabled) {
+        button.setAttribute(
+          "title",
+          "Default API limit reached. Add a key before analyzing again.",
+        );
+      } else {
+        button.removeAttribute("title");
+      }
+    });
+    const batchAnalyze = this.root.querySelector("#batch-analyze");
+    if (batchAnalyze) {
+      batchAnalyze.disabled = disabled;
+      if (disabled) {
+        batchAnalyze.title =
+          "Default API limit reached. Add a key before running batch analysis.";
+      } else {
+        batchAnalyze.removeAttribute("title");
+      }
     }
   }
 
@@ -659,6 +688,17 @@ export class Dashboard {
     );
     const displayTitle = videoRecord?.title?.trim() || "This video";
     this.setStatus(`Analyzing ${displayTitle} via YouTube Data API...`);
+    const defaultLocked =
+      hasDefaultApiLimitReached() && !getStoredUserKey();
+    if (defaultLocked) {
+      this.setStatus("Default API limit reached. Add your API key to continue.");
+      this.renderApiKeyStatus({
+        usingUserKey: false,
+        defaultLimitReached: true,
+        showInput: true,
+      });
+      return;
+    }
     try {
       const result = await AutoPatchEngine.applyPatch("analysis", () =>
         this.pipeline.run(videoId),
